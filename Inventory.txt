@@ -1,0 +1,184 @@
+model class 
+
+@Entity
+public class Item {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long itemId;
+    private String itemName;
+    private String itemEnteredByUser;
+    private LocalDateTime itemEnteredDate;
+    private Double itemBuyingPrice;
+    private Double itemSellingPrice;
+    private LocalDateTime itemLastModifiedDate;
+    private String itemLastModifiedByUser;
+    @Enumerated(EnumType.STRING)
+    private ItemStatus itemStatus;
+
+    // Getters and setters
+}
+
+
+reposiory 
+@Repository
+public interface ItemRepository extends JpaRepository<Item, Long> {
+    // Custom queries if needed
+}
+ ----------------------------------
+ItemService.java (Service Logic Implementation)
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import java.util.List;
+import java.util.Optional;
+
+@Service
+public class ItemService {
+    private final ItemRepository itemRepository;
+
+    @Autowired
+    public ItemService(ItemRepository itemRepository) {
+        this.itemRepository = itemRepository;
+    }
+
+    public List<Item> getAllItems() {
+        return itemRepository.findAll();
+    }
+
+    public Optional<Item> getItemById(Long itemId) {
+        return itemRepository.findById(itemId);
+    }
+
+    public Item createItem(Item item) {
+        if (item.getItemId() != null && itemRepository.existsById(item.getItemId())) {
+            throw new IllegalArgumentException("Item with ID " + item.getItemId() + " already exists.");
+        }
+        return itemRepository.save(item);
+    }
+
+    public Optional<Item> updateItem(Long itemId, Item updatedItem) {
+        Optional<Item> existingItemOptional = itemRepository.findById(itemId);
+        if (existingItemOptional.isEmpty()) {
+            throw new IllegalArgumentException("Item with ID " + itemId + " not found.");
+        }
+
+        Item existingItem = existingItemOptional.get();
+        existingItem.setItemName(updatedItem.getItemName());
+        existingItem.setItemEnteredByUser(updatedItem.getItemEnteredByUser());
+        existingItem.setItemBuyingPrice(updatedItem.getItemBuyingPrice());
+        existingItem.setItemSellingPrice(updatedItem.getItemSellingPrice());
+        existingItem.setItemStatus(updatedItem.getItemStatus());
+
+        return Optional.of(itemRepository.save(existingItem));
+    }
+
+    public void deleteItem(Long itemId) {
+        if (!itemRepository.existsById(itemId)) {
+            throw new IllegalArgumentException("Item with ID " + itemId + " not found.");
+        }
+        itemRepository.deleteById(itemId);
+    }
+
+    public void deleteAllItems() {
+        itemRepository.deleteAll();
+    }
+
+    public Page<Item> searchItemsByStatusAndEnteredBy(String status, String enteredBy, int page, int pageSize, String sortBy) {
+        Pageable pageable = PageRequest.of(page, pageSize);
+        return itemRepository.findByItemStatusAndItemEnteredByUser(status, enteredBy, pageable);
+    }
+}
+
+-------------------------
+
+ItemController.java (Controller Methods Implementation)
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import java.util.List;
+import java.util.Optional;
+
+@RestController
+@RequestMapping("/app/item")
+public class ItemController {
+    private final ItemService itemService;
+
+    @Autowired
+    public ItemController(ItemService itemService) {
+        this.itemService = itemService;
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Item>> getAllItems() {
+        List<Item> items = itemService.getAllItems();
+        return new ResponseEntity<>(items, HttpStatus.OK);
+    }
+
+    @GetMapping("/{itemId}")
+    public ResponseEntity<Item> getItemById(@PathVariable Long itemId) {
+        Optional<Item> item = itemService.getItemById(itemId);
+        if (item.isPresent()) {
+            return new ResponseEntity<>(item.get(), HttpStatus.OK);
+        } else {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+    }
+
+    @PostMapping
+    public ResponseEntity<Item> createItem(@RequestBody Item item) {
+        try {
+            Item createdItem = itemService.createItem(item);
+            return new ResponseEntity<>(createdItem, HttpStatus.CREATED);
+        } catch (IllegalArgumentException e) {
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    @PutMapping("/{itemId}")
+    public ResponseEntity<Item> updateItem(@PathVariable Long itemId, @RequestBody Item updatedItem) {
+        try {
+            Optional<Item> item = itemService.updateItem(itemId, updatedItem);
+            if (item.isPresent()) {
+                return new ResponseEntity<>(item.get(), HttpStatus.OK);
+            } else {
+                return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            }
+        } catch (IllegalArgumentException e) {
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    @DeleteMapping("/{itemId}")
+    public ResponseEntity<Void> deleteItem(@PathVariable Long itemId) {
+        try {
+            itemService.deleteItem(itemId);
+            return new ResponseEntity<>(HttpStatus.OK);
+        } catch (IllegalArgumentException e) {
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    @DeleteMapping
+    public ResponseEntity<Void> deleteAllItems() {
+        itemService.deleteAllItems();
+        return new ResponseEntity<>(HttpStatus.OK);
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<Page<Item>> searchItems(
+        @RequestParam(name = "status") String status,
+        @RequestParam(name = "enteredBy") String enteredBy,
+        @RequestParam(name = "page") int page,
+        @RequestParam(name = "pageSize") int pageSize,
+        @RequestParam(name = "sortBy") String sortBy
+    ) {
+        Page<Item> items = itemService.searchItemsByStatusAndEnteredBy(status, enteredBy, page, pageSize, sortBy);
+        return new ResponseEntity<>(items, HttpStatus.OK);
+    }
+}
